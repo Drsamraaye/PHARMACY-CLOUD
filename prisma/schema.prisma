@@ -1,0 +1,337 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id               String            @id @default(cuid())
+  name             String
+  slug             String            @unique
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  branches         Branch[]
+  users            UserProfile[]
+  products         Product[]
+  patients         Patient[]
+  suppliers        Supplier[]
+  sales            Sale[]
+  purchases        Purchase[]
+  subscriptions    Subscription[]
+  stripeCustomerId String?
+  bankAccounts     BankAccount[]
+  bankTransactions BankTransaction[]
+}
+
+model Branch {
+  id           String        @id @default(cuid())
+  tenantId     String
+  name         String
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users        UserProfile[]
+  products     Product[]
+  patients     Patient[]
+  sales        Sale[]
+  purchases    Purchase[]
+  suppliers    Supplier[]
+  bankAccounts BankAccount[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model UserProfile {
+  id           String      @id @default(cuid())
+  tenantId     String
+  branchId     String?
+  groupId      String?
+  email        String
+  fullName     String
+  passwordHash String
+  role         String      @default("USER")
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  group        AdminGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, branchId])
+}
+
+model AdminGroup {
+  id         String        @id @default(cuid())
+  tenantId   String
+  name       String
+  users      UserProfile[]
+  privileges Privilege[]
+
+  @@unique([tenantId, name])
+}
+
+model Privilege {
+  id      String     @id @default(cuid())
+  groupId String
+  key     String
+  allowed Boolean    @default(false)
+  group   AdminGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, key])
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  plan                 String    @default("TRIAL")
+  status               String    @default("TRIALING")
+  trialEnds            DateTime?
+  stripeSubscriptionId String?   @unique
+  createdAt            DateTime  @default(now())
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+model Product {
+  id            String           @id @default(cuid())
+  tenantId      String
+  branchId      String?
+  name          String
+  category      String?
+  barcode       String?
+  type          String           @default("PHARMACY")
+  reorderPoint  Int              @default(0)
+  salePrice     Decimal          @default(0) @db.Decimal(12, 2)
+  costPrice     Decimal          @default(0) @db.Decimal(12, 2)
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  batches       ProductBatch[]
+  saleItems     SaleItem[]
+  purchaseItems PurchaseItem[]
+  history       ProductHistory[]
+  refundItems   RefundItem[]
+
+  @@index([tenantId, type, isActive])
+  @@index([tenantId, name])
+}
+
+model ProductBatch {
+  id         String    @id @default(cuid())
+  productId  String
+  batchNo    String?
+  quantity   Int       @default(0)
+  expiryDate DateTime?
+  costPrice  Decimal   @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime  @default(now())
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, expiryDate])
+}
+
+model ProductHistory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  productId String
+  userId    String?
+  action    String
+  details   String
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, productId, createdAt])
+}
+
+model Patient {
+  id        String    @id @default(cuid())
+  tenantId  String
+  branchId  String?
+  fullName  String
+  phone     String?
+  age       Int?
+  gender    String?
+  email     String?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  sales     Sale[]
+
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, fullName])
+}
+
+model Supplier {
+  id           String     @id @default(cuid())
+  tenantId     String
+  branchId     String?
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  city         String?
+  country      String?
+  paymentTerms String?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  purchases    Purchase[]
+
+  @@index([tenantId, branchId, name])
+}
+
+model Sale {
+  id            String       @id @default(cuid())
+  tenantId      String
+  branchId      String?
+  patientId     String?
+  userId        String?
+  type          String       @default("PHARMACY")
+  total         Decimal      @default(0) @db.Decimal(12, 2)
+  discount      Decimal      @default(0) @db.Decimal(12, 2)
+  paidAmount    Decimal      @default(0) @db.Decimal(12, 2)
+  paymentMethod String?
+  status        String       @default("PAID")
+  createdAt     DateTime     @default(now())
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  patient       Patient?     @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  items         SaleItem[]
+  refunds       Refund[]
+  creditNotes   CreditNote[]
+
+  @@index([tenantId, branchId, createdAt])
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Refund {
+  id        String       @id @default(cuid())
+  tenantId  String
+  saleId    String
+  amount    Decimal      @db.Decimal(12, 2)
+  reason    String
+  createdAt DateTime     @default(now())
+  sale      Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  items     RefundItem[]
+
+  @@index([tenantId, saleId, createdAt])
+}
+
+model RefundItem {
+  id        String  @id @default(cuid())
+  refundId  String
+  productId String
+  quantity  Int
+  refund    Refund  @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model CreditNote {
+  id              String   @id @default(cuid())
+  tenantId        String
+  saleId          String
+  patientId       String?
+  amount          Decimal  @db.Decimal(12, 2)
+  remainingAmount Decimal  @db.Decimal(12, 2)
+  status          String   @default("AVAILABLE")
+  createdAt       DateTime @default(now())
+  sale            Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, patientId, status])
+}
+
+model Purchase {
+  id         String         @id @default(cuid())
+  tenantId   String
+  branchId   String?
+  supplierId String?
+  total      Decimal        @default(0) @db.Decimal(12, 2)
+  paidAmount Decimal        @default(0) @db.Decimal(12, 2)
+  discount   Decimal        @default(0) @db.Decimal(12, 2)
+  invoiceNo  String?
+  notes      String?
+  status     String         @default("UNPAID")
+  createdAt  DateTime       @default(now())
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  supplier   Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items      PurchaseItem[]
+
+  @@index([tenantId, createdAt])
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  productId  String
+  quantity   Int
+  costPrice  Decimal  @db.Decimal(12, 2)
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+}
+
+/// Tenant-scoped storage for configurable business records whose fields vary by workflow.
+model ModuleRecord {
+  id          String    @id @default(cuid())
+  tenantId    String
+  branchId    String?
+  collection  String
+  record      Json
+  externalRef String?   @unique
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([tenantId, collection, branchId, createdAt])
+}
+
+model BankAccount {
+  id        String            @id @default(cuid())
+  tenantId  String
+  branchId  String?
+  name      String
+  currency  String            @default("USD")
+  balance   Decimal           @default(0) @db.Decimal(14, 2)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  entries   BankTransaction[]
+
+  @@unique([tenantId, branchId, name])
+  @@index([tenantId, branchId])
+}
+
+model BankTransaction {
+  id            String      @id @default(cuid())
+  tenantId      String
+  bankAccountId String
+  type          String
+  amount        Decimal     @db.Decimal(14, 2)
+  description   String?
+  reference     String?
+  createdBy     String?
+  createdAt     DateTime    @default(now())
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, bankAccountId, createdAt])
+}

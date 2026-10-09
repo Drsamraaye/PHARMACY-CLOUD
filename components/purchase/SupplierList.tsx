@@ -1,0 +1,22 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type Supplier = { id: string; name: string; phone?: string | null; address?: string | null; createdAt: string; email?: string | null; city?: string | null; country?: string | null; paymentTerms?: string | null; notes?: string | null };
+const registered = (value: string) => new Date(value).toLocaleString(undefined, { day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" });
+
+/** Supplier directory with editing and protected deletion. */
+export default function SupplierList() {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [editing, setEditing] = useState<Supplier | null>(null); const [saving, setSaving] = useState(false);
+  const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch("/api/purchase/suppliers", { cache: "no-store" }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Could not load suppliers"); setSuppliers(payload.data ?? []); } catch (e) { setError(e instanceof Error ? e.message : "Could not load suppliers"); } finally { setLoading(false); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  const ordered = useMemo(() => [...suppliers].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [suppliers]);
+  async function saveEdit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!editing) return; setSaving(true); setError(""); const data = new FormData(event.currentTarget); try { const response = await fetch(`/api/purchase/suppliers/${encodeURIComponent(editing.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: data.get("name"), phone: data.get("phone") || null, address: data.get("address") || null }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Supplier could not be updated"); setEditing(null); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Supplier could not be updated"); } finally { setSaving(false); } }
+  async function remove(supplier: Supplier) { if (!window.confirm(`Delete supplier “${supplier.name}”?`)) return; setError(""); try { const response = await fetch(`/api/purchase/suppliers/${encodeURIComponent(supplier.id)}`, { method: "DELETE" }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Supplier could not be deleted"); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Supplier could not be deleted"); } }
+  return <main className="supplier-list-page"><section className="supplier-list-card"><header><h1>Suppliers List</h1><a href="/purchase/add-supplier">Add New</a></header>
+    {error && <p className="supplier-list-error" role="alert">{error}</p>}
+    <div className="supplier-list-table-wrap"><table className="supplier-list-table"><thead><tr><th>#</th><th>Reg Date</th><th>Name</th><th>Phone</th><th>Address</th><th>Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="supplier-list-empty">Loading suppliers…</td></tr> : !ordered.length ? <tr><td colSpan={6} className="supplier-list-empty">No records found.</td></tr> : ordered.map((supplier, index) => <tr key={supplier.id}><td>{index + 1}</td><td>{registered(supplier.createdAt)}</td><td>{supplier.name}</td><td>{supplier.phone || "—"}</td><td>{supplier.address || "—"}</td><td className="supplier-list-actions"><button onClick={() => setEditing(supplier)}>Edit</button><button className="delete" onClick={() => void remove(supplier)}>Delete</button></td></tr>)}</tbody></table></div>
+  </section>
+  {editing && <div className="supplier-edit-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setEditing(null); }}><form className="supplier-edit-modal" onSubmit={saveEdit}><h2>Edit Supplier</h2><label>Name<input name="name" required minLength={2} defaultValue={editing.name} /></label><label>Phone<input name="phone" type="tel" defaultValue={editing.phone ?? ""} /></label><label>Address<input name="address" defaultValue={editing.address ?? ""} /></label><div><button type="button" onClick={() => setEditing(null)}>Cancel</button><button disabled={saving}>{saving ? "Saving…" : "Save"}</button></div></form></div>}
+  </main>;
+}

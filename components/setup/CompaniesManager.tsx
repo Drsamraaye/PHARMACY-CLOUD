@@ -1,0 +1,12 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+type Company={id:string;name?:string;companyName?:string;phone?:string;managerName?:string;managerNumber?:string};
+export default function CompaniesManager(){
+  const [rows,setRows]=useState<Company[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");
+  const load=useCallback(async()=>{setLoading(true);setError("");try{const response=await fetch("/api/setup/companies",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Companies lama soo rari karin.");setRows(result.data??[]);}catch(cause){setError(cause instanceof Error?cause.message:"Companies lama soo rari karin.");}finally{setLoading(false);}},[]);
+  useEffect(()=>{void load();},[load]);
+  async function remove(company:Company){if(!window.confirm(`Delete company “${company.name||company.companyName}”?`))return;try{const response=await fetch("/api/setup/companies",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:company.id})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Company lama tirtiri karin.");await load();}catch(cause){setError(cause instanceof Error?cause.message:"Company lama tirtiri karin.");}}
+  return <main className="legacy-admin-page"><section className="legacy-admin-card"><header className="legacy-admin-title company-list-title"><h1>Companies List</h1><Link className="legacy-pill-add" href="/setup/companies/add">＋ Add Company</Link></header>{error&&<p className="legacy-admin-error" role="alert">{error}</p>}<div className="legacy-admin-table-scroll company-table-scroll"><table className="legacy-admin-table"><thead><tr><th>#</th><th>Company Name</th><th>Phone</th><th>Manager Number</th><th>Action</th></tr></thead><tbody>{loading?<tr><td colSpan={5} className="legacy-admin-empty">Loading…</td></tr>:rows.length?rows.map((company,index)=><tr key={company.id}><td>{index+1}</td><td>{company.name||company.companyName||"—"}</td><td>{company.phone||"—"}</td><td>{company.managerName||company.managerNumber||"—"}</td><td><Link className="legacy-btn-blue company-edit-link" href={`/setup/companies/add?id=${encodeURIComponent(company.id)}`}>Edit</Link><button className="legacy-btn-red" onClick={()=>void remove(company)}>Delete</button></td></tr>):<tr><td colSpan={5} className="legacy-admin-empty">No companies found.</td></tr>}</tbody></table></div></section></main>;
+}
