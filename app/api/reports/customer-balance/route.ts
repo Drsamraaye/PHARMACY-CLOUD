@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const [sales, branches, users] = await Promise.all([
     prisma.sale.findMany({
       where: { tenantId: session.tenantId, ...branchFilter, status: { not: "VOID" }, patientId: { not: null }, ...(userId ? { userId } : {}) },
-      select: { patientId: true, userId: true, total: true, paidAmount: true, patient: { select: { id: true, fullName: true, phone: true } } },
+      select: { patientId: true, userId: true, total: true, paidAmount: true, patient: { select: { id: true, fullName: true, phone: true } }, creditNotes: { where: { kind: "RETURN" }, select: { amount: true } } },
       take: 10000,
     }),
     canChoose ? prisma.branch.findMany({ where: { tenantId: session.tenantId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
   const grouped = new Map<string, { id: string; name: string; phone: string; balance: number; transactions: number }>();
   for (const sale of sales) {
     if (!sale.patient) continue;
-    const due = Math.max(0, Number(sale.total) - Number(sale.paidAmount));
+    const credits = sale.creditNotes.reduce((sum, note) => sum + Number(note.amount), 0);
+    const due = Math.max(0, Number(sale.total) - Number(sale.paidAmount) - credits);
     if (due <= 0) continue;
     const item = grouped.get(sale.patient.id) ?? { id: sale.patient.id, name: sale.patient.fullName, phone: sale.patient.phone || "—", balance: 0, transactions: 0 };
     item.balance += due;

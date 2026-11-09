@@ -23,7 +23,8 @@ export async function PUT(req: NextRequest, { params }: Context) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid product" }, { status: 400 });
   const result = await prisma.$transaction(async (tx) => {
     const where = { id, tenantId: session.tenantId, ...(session.branchId ? { branchId: session.branchId } : {}) };
-    const updated = await tx.product.updateMany({ where, data: parsed.data });
+    const data = { ...parsed.data, ...(parsed.data.isActive === false ? { archivedAt: new Date(), archivedBy: session.userId } : parsed.data.isActive === true ? { archivedAt: null, archivedBy: null } : {}) };
+    const updated = await tx.product.updateMany({ where, data });
     if (!updated.count) return null;
     const product = await tx.product.findUnique({ where: { id } });
     await tx.productHistory.create({ data: { tenantId: session.tenantId, productId: id, userId: session.userId, action: parsed.data.isActive === false ? "ARCHIVED" : parsed.data.isActive === true ? "REACTIVATED" : "UPDATED", details: JSON.stringify(parsed.data) } });
@@ -37,7 +38,7 @@ export async function DELETE(req: NextRequest, { params }: Context) {
   const session = await getSession(req); if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const result = await prisma.$transaction(async (tx) => {
-    const updated = await tx.product.updateMany({ where: { id, tenantId: session.tenantId, ...(session.branchId ? { branchId: session.branchId } : {}) }, data: { isActive: false } });
+    const updated = await tx.product.updateMany({ where: { id, tenantId: session.tenantId, ...(session.branchId ? { branchId: session.branchId } : {}) }, data: { isActive: false, archivedAt: new Date(), archivedBy: session.userId } });
     if (!updated.count) return false;
     await tx.productHistory.create({ data: { tenantId: session.tenantId, productId: id, userId: session.userId, action: "ARCHIVED", details: "Product archived" } });
     return true;

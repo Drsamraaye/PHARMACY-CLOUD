@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
         ...(session.branchId ? { branchId: session.branchId } : {}),
         ...(customerId ? { patientId: customerId } : {}),
         ...(userId ? { userId } : {}),
-        ...(paymentMethod ? { paymentMethod } : {}),
+        ...(paymentMethod ? { OR: [{ paymentMethod }, { payments: { some: { method: paymentMethod } } }] } : {}),
         ...(type !== "ALL" ? { type } : {}),
         ...(category ? { items: { some: { product: { category } } } } : {}),
         ...dateRange,
@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
         patient: { select: { id: true, fullName: true, phone: true } },
         items: { include: { product: { select: { name: true, category: true } } } },
         refunds: { select: { id: true, amount: true, reason: true, createdAt: true } },
-        creditNotes: { select: { id: true, amount: true, remainingAmount: true, status: true, createdAt: true } },
+        creditNotes: { select: { id: true, kind: true, amount: true, remainingAmount: true, status: true, createdAt: true } },
+        payments: { select: { id: true, method: true, currency: true, amount: true, usdEquivalent: true, exchangeRate: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 2000,
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
   const all = sales.map((sale) => {
     const total = Number(sale.total);
     const paid = Number(sale.paidAmount);
+    const returnedCredit = sale.creditNotes.filter((credit) => credit.kind === "RETURN").reduce((sum, credit) => sum + Number(credit.amount), 0);
     return {
       id: sale.id,
       date: sale.createdAt,
@@ -75,12 +77,13 @@ export async function GET(req: NextRequest) {
       discount: Number(sale.discount),
       paid,
       total,
-      balance: Math.max(0, total - paid),
+      balance: Math.max(0, total - paid - returnedCredit),
       status: sale.status,
       paymentMethod: sale.paymentMethod || "Unspecified",
+      payments: sale.payments.map((payment) => ({ id: payment.id, method: payment.method, currency: payment.currency, amount: Number(payment.amount), usdEquivalent: Number(payment.usdEquivalent), exchangeRate: Number(payment.exchangeRate) })),
       items: sale.items.map((item) => ({ id: item.id, name: item.product.name, category: item.product.category, quantity: item.quantity, price: Number(item.unitPrice), total: Number(item.unitPrice) * item.quantity })),
       refunds: sale.refunds.map((refund) => ({ id: refund.id, amount: Number(refund.amount), reason: refund.reason, date: refund.createdAt })),
-      creditNotes: sale.creditNotes.map((credit) => ({ id: credit.id, amount: Number(credit.amount), remainingAmount: Number(credit.remainingAmount), status: credit.status, date: credit.createdAt })),
+      creditNotes: sale.creditNotes.map((credit) => ({ id: credit.id, kind: credit.kind, amount: Number(credit.amount), remainingAmount: Number(credit.remainingAmount), status: credit.status, date: credit.createdAt })),
     };
   });
   const data = all.filter((sale) => balance === "ALL" || (balance === "DUE" ? sale.balance > 0 : balance === "PAID" ? sale.balance === 0 : true));

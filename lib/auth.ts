@@ -69,7 +69,7 @@ export async function getSession(req: Request): Promise<SessionUser | null> {
     }
     const session = { ...tokenSession, ...user, branchId };
     const requestUrl = new URL(req.url);
-    const groupManaged = Boolean(session.groupId) && !["OWNER", "ADMIN", "SUPER_ADMIN"].includes(session.role);
+    const groupManaged = Boolean(session.groupId) && !["OWNER", "ADMIN", "SUPER_ADMIN", "CASHIER"].includes(session.role);
     const authBootstrap = requestUrl.pathname === "/api/auth/session" || requestUrl.pathname.startsWith("/api/auth/");
     if (groupManaged && !authBootstrap) {
       if (!await checkRequestPermission(session.userId, requestUrl.pathname, req.method)) return null;

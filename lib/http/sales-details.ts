@@ -18,11 +18,12 @@ export async function voidSale(req: NextRequest, context: Context, type: SaleTyp
   const { id } = await context.params;
   try {
     const data = await prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.findFirst({ where: { id, tenantId: session.tenantId, type }, include: { items: { include: { product: true } }, refunds: true } });
+      const sale = await tx.sale.findFirst({ where: { id, tenantId: session.tenantId, type }, include: { items: { include: { product: true } }, refunds: true, creditNotes: { where: { kind: "RETURN" } } } });
       if (!sale) throw new Error("Sale not found");
       if (sale.status === "VOID") return sale;
       if (sale.refunds.length) throw new Error("A sale with refunds cannot be voided");
-      if (type === "PHARMACY") for (const item of sale.items) await tx.productBatch.create({ data: { productId: item.productId, quantity: item.quantity, costPrice: item.product.costPrice, batchNo: `VOID-${sale.id.slice(-8)}` } });
+      if (sale.creditNotes.length) throw new Error("A sale with return credit notes cannot be voided");
+      if (type === "PHARMACY") for (const item of sale.items) await tx.productBatch.create({ data: { productId: item.productId, quantity: item.quantity, costPrice: item.costPrice, batchNo: `VOID-${sale.id.slice(-8)}` } });
       return tx.sale.update({ where: { id: sale.id }, data: { status: "VOID" }, include: { items: { include: { product: true } } } });
     }, { isolationLevel: "Serializable" });
     return NextResponse.json({ data });

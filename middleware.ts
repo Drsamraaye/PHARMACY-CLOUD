@@ -31,7 +31,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  const groupManaged = Boolean(session.groupId) && !["OWNER", "ADMIN", "SUPER_ADMIN"].includes(session.role);
+  const groupManaged = Boolean(session.groupId) && !["OWNER", "ADMIN", "SUPER_ADMIN", "CASHIER"].includes(session.role);
   if (!groupManaged && !pathname.startsWith("/api/") && !canAccessPath(session.role, pathname, req.method, req.nextUrl.searchParams)) return NextResponse.redirect(new URL("/access-denied", req.url));
   if (!groupManaged && pathname.startsWith("/api/") && !canAccessPath(session.role, pathname, req.method, req.nextUrl.searchParams)) {
     return NextResponse.json({ error: "Forbidden: your role cannot access this module" }, { status: 403 });

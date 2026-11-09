@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const requestedType = req.nextUrl.searchParams.get("type");
   const type = ["PHARMACY", "LAB", "SERVICE"].includes(requestedType || "") ? requestedType! : undefined;
   const inactive = req.nextUrl.searchParams.get("inactive") === "true";
-  const products = await prisma.product.findMany({ where: { tenantId: session.tenantId, ...(session.branchId ? { branchId: session.branchId } : {}), ...(type ? { type } : {}), isActive: !inactive, ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { barcode: { contains: search, mode: "insensitive" } }] } : {}) }, include: { batches: true, history: { orderBy: { createdAt: "asc" }, take: 1, select: { userId: true, createdAt: true } } }, orderBy: { name: "asc" }, take: 5000 });
+  const products = await prisma.product.findMany({ where: { tenantId: session.tenantId, ...(session.branchId ? { branchId: session.branchId } : {}), ...(type ? { type } : {}), isActive: !inactive, ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { genericName: { contains: search, mode: "insensitive" } }, { manufacturer: { contains: search, mode: "insensitive" } }, { barcode: { contains: search, mode: "insensitive" } }] } : {}) }, include: { batches: true, history: { orderBy: { createdAt: "asc" }, take: 1, select: { userId: true, createdAt: true } } }, orderBy: { name: "asc" }, take: 5000 });
   const userIds = [...new Set(products.flatMap((product) => product.history.map((entry) => entry.userId).filter((id): id is string => Boolean(id))))];
   const users = userIds.length ? await prisma.userProfile.findMany({ where: { id: { in: userIds }, tenantId: session.tenantId }, select: { id: true, fullName: true } }) : [];
   const userNames = new Map(users.map((user) => [user.id, user.fullName]));
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const parsedRows = z.array(createProductSchema).min(1).max(100).safeParse(input);
     if (!parsedRows.success) return NextResponse.json({ error: parsedRows.error.issues[0]?.message || "At least one valid product is required" }, { status: 400 });
     const products = await prisma.$transaction(async (tx) => Promise.all(parsedRows.data.map(async (body) => {
-      const created = await tx.product.create({ data: { tenantId: session.tenantId, branchId: session.branchId, name: body.name, category: body.category || null, barcode: body.barcode || null, type: body.type, reorderPoint: body.reorderPoint, salePrice: body.salePrice, costPrice: body.costPrice } });
+      const created = await tx.product.create({ data: { tenantId: session.tenantId, branchId: session.branchId, name: body.name, genericName: body.genericName || null, category: body.category || null, manufacturer: body.manufacturer || null, barcode: body.barcode || null, type: body.type, reorderPoint: body.reorderPoint, salePrice: body.salePrice, salePrice2: body.salePrice2, salePriceCurrency: body.salePriceCurrency, salePrice2Currency: body.salePrice2Currency, costPrice: body.costPrice } });
       if (body.quantity > 0 || body.expiryDate) await tx.productBatch.create({ data: { productId: created.id, quantity: body.quantity, costPrice: body.costPrice, expiryDate: body.expiryDate ? new Date(body.expiryDate) : null } });
       await tx.productHistory.create({ data: { tenantId: session.tenantId, productId: created.id, userId: session.userId, action: "CREATED", details: "Product created" } });
       return created;
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid product" }, { status: 400 });
   const body = parsed.data;
   const product = await prisma.$transaction(async (tx) => {
-    const created = await tx.product.create({ data: { tenantId: session.tenantId, branchId: session.branchId, name: body.name, category: body.category || null, barcode: body.barcode || null, type: body.type, reorderPoint: body.reorderPoint, salePrice: body.salePrice, costPrice: body.costPrice } });
+    const created = await tx.product.create({ data: { tenantId: session.tenantId, branchId: session.branchId, name: body.name, genericName: body.genericName || null, category: body.category || null, manufacturer: body.manufacturer || null, barcode: body.barcode || null, type: body.type, reorderPoint: body.reorderPoint, salePrice: body.salePrice, salePrice2: body.salePrice2, salePriceCurrency: body.salePriceCurrency, salePrice2Currency: body.salePrice2Currency, costPrice: body.costPrice } });
     if (body.quantity > 0 || body.expiryDate) await tx.productBatch.create({ data: { productId: created.id, quantity: body.quantity, costPrice: body.costPrice, expiryDate: body.expiryDate ? new Date(body.expiryDate) : null } });
     await tx.productHistory.create({ data: { tenantId: session.tenantId, productId: created.id, userId: session.userId, action: "CREATED", details: "Product created" } });
     return created;

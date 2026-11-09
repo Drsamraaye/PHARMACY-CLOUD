@@ -3,7 +3,7 @@ const roleModules: Record<string, readonly string[]> = {
   PHARMACIST: ["products", "orders"],
   DOCTOR: ["home", "patients", "doctor-notes", "laboratory", "medications", "tickets", "requests"],
   RECEPTIONIST: ["home", "patients", "laboratory", "tickets", "requests", "doctor-notes"],
-  CASHIER: ["home", "orders", "patients", "reports", "cash-in", "deposits", "tickets"],
+  CASHIER: ["home", "orders", "products", "purchase", "patients", "medications", "expenses", "reports", "tickets", "setup"],
   ACCOUNTANT: ["home", "orders", "purchase", "reports", "expenses", "private-expenses", "deposits", "cash-in", "debt", "bank"],
   USER: ["home"],
 };
@@ -34,6 +34,15 @@ const apiPrefixes: Array<[string, string]> = [
   ["/api/setup", "admin-only"], ["/api/billing", "admin-only"],
 ];
 
+const cashierPagePrefixes = [
+  "/home", "/tickets/add", "/order-management", "/products-management", "/purchase",
+  "/patients", "/patient-medications", "/expenses", "/reports", "/setup",
+];
+const cashierApiPrefixes = [
+  "/api/dashboard", "/api/tickets", "/api/order-management", "/api/products", "/api/purchase",
+  "/api/patients", "/api/patient-medications", "/api/expenses", "/api/reports", "/api/setup",
+];
+
 function findModule(pathname: string, prefixes: Array<[string, string]>): string | null {
   return prefixes.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1] ?? null;
 }
@@ -41,6 +50,7 @@ function findModule(pathname: string, prefixes: Array<[string, string]>): string
 export function canAccessPath(role: string, pathname: string, method = "GET", searchParams?: URLSearchParams): boolean {
   if (["/login", "/signup", "/forgot-password", "/account-inactive", "/access-denied"].some((path) => pathname === path || pathname.startsWith(`${path}/`))) return true;
   if (pathname === "/") return role !== "INACTIVE_NOTICE";
+  if (["/order-management/closeout-notifications", "/api/order-management/closeout-notifications"].some((path) => pathname === path || pathname.startsWith(`${path}/`))) return ["OWNER", "ADMIN"].includes(role);
   if (["/profile", "/settings"].some((path) => pathname === path || pathname.startsWith(`${path}/`))) return role === "SUPER_ADMIN";
 
   const module = pathname.startsWith("/api/")
@@ -50,6 +60,13 @@ export function canAccessPath(role: string, pathname: string, method = "GET", se
   if (module === "super-admin") return role === "SUPER_ADMIN";
   if (role === "SUPER_ADMIN") return pathname === "/platform-analytics" || pathname.startsWith("/platform-") || ["/tenants", "/subscriptions", "/branches", "/roles", "/plans", "/analytics", "/notifications"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   if (role === "OWNER" || role === "ADMIN") return true;
+  if (role === "CASHIER") {
+    if (pathname === "/api/tickets") return method === "POST";
+    if (pathname.startsWith("/api/tickets/")) return false;
+    const allowed = pathname.startsWith("/api/") ? cashierApiPrefixes : cashierPagePrefixes;
+    if (!allowed.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return false;
+    return true;
+  }
   if (role === "PHARMACIST") {
     if (!pathname.startsWith("/api/")) return ["/order-management", "/products-management"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
     if (pathname === "/api/patients") return method === "GET" || method === "POST";

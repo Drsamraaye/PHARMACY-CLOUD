@@ -18,10 +18,12 @@ export async function POST(req: NextRequest) {
   try {
     await prisma.$transaction(async (tx) => {
       if (await tx.moduleRecord.findUnique({ where: { externalRef: parsed.data.reference } })) return;
-      const sale = await tx.sale.findUnique({ where: { id: parsed.data.saleId } });
-      if (!sale || sale.status === "VOID" || parsed.data.amount > Number(sale.total) - Number(sale.paidAmount)) throw new Error("Sale not found or payment exceeds balance");
+      const sale = await tx.sale.findUnique({ where: { id: parsed.data.saleId }, include: { creditNotes: { where: { kind: "RETURN" }, select: { amount: true } } } });
+      const creditAmount = sale?.creditNotes.reduce((sum, note) => sum + Number(note.amount), 0) ?? 0;
+      const settledTotal = sale ? Number(sale.total) - creditAmount : 0;
+      if (!sale || sale.status === "VOID" || parsed.data.amount > settledTotal - Number(sale.paidAmount)) throw new Error("Sale not found or payment exceeds balance");
       const amount = Math.round((Number(sale.paidAmount) + parsed.data.amount) * 100) / 100;
-      const updated = await tx.sale.updateMany({ where: { id: sale.id, paidAmount: sale.paidAmount }, data: { paidAmount: amount, status: amount >= Number(sale.total) ? "PAID" : "PARTIAL" } });
+      const updated = await tx.sale.updateMany({ where: { id: sale.id, paidAmount: sale.paidAmount }, data: { paidAmount: amount, status: amount >= settledTotal ? "PAID" : "PARTIAL" } });
       if (!updated.count) throw new Error("Sale balance changed; callback can be retried");
       await tx.moduleRecord.create({ data: { tenantId: sale.tenantId, branchId: sale.branchId, collection: "mobile-money-payments", externalRef: parsed.data.reference, record: { saleId: sale.id, amount: parsed.data.amount, reference: parsed.data.reference } } });
     }, { isolationLevel: "Serializable" });

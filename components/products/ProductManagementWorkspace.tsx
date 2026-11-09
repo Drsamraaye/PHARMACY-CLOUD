@@ -5,12 +5,17 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 type Product = {
   id: string;
   name: string;
+  genericName?: string | null;
   category?: string | null;
+  manufacturer?: string | null;
   barcode?: string | null;
   type?: string;
   quantity?: number;
   reorderPoint?: number;
   salePrice?: number | string;
+  salePrice2?: number | string;
+  salePriceCurrency?: string;
+  salePrice2Currency?: string;
   costPrice?: number | string;
   totalPurchase?: number;
   isActive?: boolean;
@@ -18,8 +23,10 @@ type Product = {
   batchNo?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  archivedAt?: string | null;
   branchId?: string | null;
   addedBy?: string;
+  archivedByName?: string;
   action?: string;
   details?: string;
   product?: { id: string; name: string; type?: string; branch?: { name: string } | null };
@@ -41,7 +48,7 @@ const viewDetails: Record<View, { title: string; endpoint: string; description: 
   duplicates: { title: "Duplicate Products", endpoint: "/api/products", description: "Browse products in the selected branch." },
 };
 
-const emptyEdit = { name: "", category: "", barcode: "", type: "PHARMACY", salePrice: "0", costPrice: "0", reorderPoint: "0" };
+const emptyEdit = { name: "", genericName: "", category: "", manufacturer: "", barcode: "", type: "PHARMACY", salePrice: "0", salePrice2: "0", salePriceCurrency: "USD", salePrice2Currency: "SLSH", costPrice: "0", reorderPoint: "0" };
 
 export default function ProductManagementWorkspace({ view, addNewHref }: { view: View; addNewHref?: string }) {
   const details = viewDetails[view];
@@ -50,6 +57,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
   const [category, setCategory] = useState("");
   const [productType, setProductType] = useState("");
   const [expiryMonths, setExpiryMonths] = useState("3");
+  const [expiryClass, setExpiryClass] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -89,8 +97,15 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
     const matchesType = !productType || row.type === productType;
     const needle = search.trim().toLocaleLowerCase();
     const matchesSearch = !needle || [row.name, row.barcode, row.category, row.action, row.details, row.match, row.product?.name, ...(row.products ?? []).map((product) => product.name)].some((value) => String(value ?? "").toLocaleLowerCase().includes(needle));
-    return matchesCategory && matchesType && matchesSearch;
-  }), [category, productType, rows, search]);
+    const classification = (row as Product & { classification?: string }).classification ?? "";
+    return matchesCategory && matchesType && matchesSearch && (!expiryClass || classification === expiryClass);
+  }), [category, expiryClass, productType, rows, search]);
+
+  function exportExpiryCsv() {
+    const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const records = [["Product", "Batch", "Quantity", "Expiry date", "Days until expiry", "Branch", "Supplier", "Classification"], ...visibleRows.map((row) => [row.product?.name ?? "", row.batchNo ?? "", row.quantity ?? 0, row.expiryDate ?? "", (row as Product & { daysUntilExpiry?: number }).daysUntilExpiry ?? "", row.product?.branch?.name ?? "", (row as Product & { supplier?: { name?: string } }).supplier?.name ?? "", (row as Product & { classification?: string }).classification ?? ""])];
+    const blob = new Blob([records.map((record) => record.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "expiry-products.csv"; link.click(); URL.revokeObjectURL(link.href);
+  }
 
   async function changeActive(product: Product, isActive: boolean) {
     setBusyId(product.id); setError(""); setNotice("");
@@ -106,7 +121,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
 
   function beginEdit(product: Product) {
     setEdit(product);
-    setEditValues({ name: product.name, category: product.category ?? "", barcode: product.barcode ?? "", type: product.type ?? "PHARMACY", salePrice: String(product.salePrice ?? 0), costPrice: String(product.costPrice ?? 0), reorderPoint: String(product.reorderPoint ?? 0) });
+    setEditValues({ name: product.name, genericName: product.genericName ?? "", category: product.category ?? "", manufacturer: product.manufacturer ?? "", barcode: product.barcode ?? "", type: product.type ?? "PHARMACY", salePrice: String(product.salePrice ?? 0), salePrice2: String(product.salePrice2 ?? 0), salePriceCurrency: product.salePriceCurrency ?? "USD", salePrice2Currency: product.salePrice2Currency ?? "SLSH", costPrice: String(product.costPrice ?? 0), reorderPoint: String(product.reorderPoint ?? 0) });
     setError("");
   }
 
@@ -115,7 +130,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
     if (!edit) return;
     setBusyId(edit.id); setError("");
     try {
-      const response = await fetch(`/api/products/${encodeURIComponent(edit.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...editValues, salePrice: Number(editValues.salePrice), costPrice: Number(editValues.costPrice), reorderPoint: Number(editValues.reorderPoint) }) });
+      const response = await fetch(`/api/products/${encodeURIComponent(edit.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...editValues, salePrice: Number(editValues.salePrice), salePrice2: Number(editValues.salePrice2), costPrice: Number(editValues.costPrice), reorderPoint: Number(editValues.reorderPoint) }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not save product");
       setEdit(null); setNotice(`${editValues.name} was updated.`); await load();
@@ -151,7 +166,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
       </header>
       {view === "catalog" && <div className="product-list-summary"><article><small>Total Products</small><strong>{visibleRows.length}</strong></article><article className="danger"><small>Out of Stock</small><strong>{visibleRows.filter((row) => Number(row.quantity ?? 0) <= 0).length}</strong></article><article className="indigo"><small>Total Purchase</small><strong>{formatMoney(visibleRows.reduce((sum, row) => sum + Number(row.totalPurchase ?? 0), 0))}</strong></article><article><small>Total Sale</small><strong>{formatMoney(visibleRows.reduce((sum, row) => sum + Number(row.quantity ?? 0) * Number(row.salePrice ?? 0), 0))}</strong></article></div>}
       <div className="product-workspace-filters">
-        {view === "expiry" && <label>Month<input aria-label="Months until expiry" type="number" min="1" max="24" value={expiryMonths} onChange={(event) => setExpiryMonths(event.target.value)} /></label>}
+        {view === "expiry" && <><label>Months ahead<input aria-label="Months until expiry" type="number" min="1" max="24" value={expiryMonths} onChange={(event) => setExpiryMonths(event.target.value)} /></label><label>Classification<select value={expiryClass} onChange={(event) => setExpiryClass(event.target.value)}><option value="">All statuses</option><option value="EXPIRED">Expired</option><option value="WITHIN_30_DAYS">Within 30 days</option><option value="WITHIN_60_DAYS">Within 60 days</option><option value="WITHIN_90_DAYS">Within 90 days</option><option value="VALID">Valid</option></select></label></>}
         <label>{view === "laboratory" ? "Search lab" : view === "expiry" ? "" : view === "duplicates" ? "Magaca alaabta" : "Search products"}<input id="product-search" placeholder={view === "laboratory" ? "Magaca labka..." : view === "expiry" ? "Search product name" : view === "duplicates" ? "Magaca alaabta..." : "Search name or barcode"} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
         {(view === "catalog" || view === "duplicates") && <label>Type<select aria-label="Filter by type" value={productType} onChange={(event) => setProductType(event.target.value)}><option value="">All</option><option value="PHARMACY">Pharmacy</option><option value="LAB">Laboratory</option><option value="SERVICE">Service</option></select></label>}
         {categories.length > 0 && view !== "history" && view !== "duplicates" && view !== "expiry" && <label>Category<select aria-label="Filter by category" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">All categories</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}
@@ -159,7 +174,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
       </div>
       <button className="product-report-search" type="button" onClick={() => void load()} disabled={loading}>{loading ? "Loading…" : "Search"}</button>
     </div>
-    <div className="product-report-table-heading">{view === "catalog" && <button className="product-list-print" onClick={() => window.print()}>Print</button>}<span>{visibleRows.length} record{visibleRows.length === 1 ? "" : "s"}</span></div>
+    <div className="product-report-table-heading">{view === "catalog" && <button className="product-list-print" onClick={() => window.print()}>Print</button>}{view === "expiry" && <><button className="product-list-print" onClick={exportExpiryCsv}>Export Excel (CSV)</button><button className="product-list-print" onClick={() => window.print()}>Print / PDF</button></>}<span>{visibleRows.length} record{visibleRows.length === 1 ? "" : "s"}</span></div>
 
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</p>}
@@ -169,7 +184,7 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
     {edit && <div className="product-edit-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEdit(null); }}>
       <form onSubmit={saveEdit} className="product-edit-modal" role="dialog" aria-modal="true" aria-labelledby="product-edit-title">
         <header className="product-edit-header"><div className="product-edit-heading-icon" aria-hidden="true">✎</div><div className="product-edit-heading-copy"><h2 id="product-edit-title">Edit product</h2><p>Update product details. Changes are recorded in product history.</p></div><button type="button" aria-label="Close edit form" className="product-edit-close" onClick={() => setEdit(null)}>×</button></header>
-        <div className="product-edit-grid">{([['name','Name','text'],['category','Category','text'],['barcode','Barcode','text'],['salePrice','Sale price','number'],['costPrice','Cost price','number'],['reorderPoint','Reorder point','number']] as const).map(([name,label,type]) => <label key={name} className="product-edit-field">{label}<input required={name === "name"} min={type === "number" ? "0" : undefined} step={name.includes("Price") || name.includes("price") ? "0.01" : "1"} type={type} value={editValues[name]} onChange={(event) => setEditValues((current) => ({ ...current, [name]: event.target.value }))} /></label>)}<label className="product-edit-field">Product type<select value={editValues.type} onChange={(event) => setEditValues((current) => ({ ...current, type: event.target.value }))}><option value="PHARMACY">Pharmacy</option><option value="LAB">Laboratory</option><option value="SERVICE">Service</option></select></label></div>
+        <div className="product-edit-grid">{([['name','Name','text'],['genericName','Generic name','text'],['category','Category','text'],['manufacturer','Manufacturer','text'],['barcode','Barcode','text'],['salePrice','Sale price 1','number'],['salePrice2','Sale price 2','number'],['costPrice','Purchase price','number'],['reorderPoint','Reorder point','number']] as const).map(([name,label,type]) => <label key={name} className="product-edit-field">{label}<input required={name === "name"} min={type === "number" ? "0" : undefined} step={type === "number" && name.toLowerCase().includes("price") ? "0.01" : "1"} type={type} value={editValues[name]} onChange={(event) => setEditValues((current) => ({ ...current, [name]: event.target.value }))} /></label>)}<label className="product-edit-field">Price 1 currency<select value={editValues.salePriceCurrency} onChange={(event) => setEditValues((current) => ({ ...current, salePriceCurrency: event.target.value }))}><option>USD</option><option>SLSH</option></select></label><label className="product-edit-field">Price 2 currency<select value={editValues.salePrice2Currency} onChange={(event) => setEditValues((current) => ({ ...current, salePrice2Currency: event.target.value }))}><option>USD</option><option>SLSH</option></select></label><label className="product-edit-field">Product type<select value={editValues.type} onChange={(event) => setEditValues((current) => ({ ...current, type: event.target.value }))}><option value="PHARMACY">Pharmacy</option><option value="LAB">Laboratory</option><option value="SERVICE">Service</option></select></label></div>
         {error && <p role="alert" className="product-edit-error">{error}</p>}
         <footer className="product-edit-footer"><button type="button" onClick={() => setEdit(null)} className="product-edit-cancel">Cancel</button><button disabled={busyId === edit.id} className="product-edit-save">{busyId === edit.id ? "Saving…" : "Save changes"}</button></footer>
       </form>
@@ -180,12 +195,12 @@ export default function ProductManagementWorkspace({ view, addNewHref }: { view:
 
 function ProductTable({ view, rows, loading, busyId, onEdit, onActiveChange, onHistory }: { view: View; rows: Product[]; loading: boolean; busyId: string; onEdit: (product: Product) => void; onActiveChange: (product: Product, active: boolean) => void; onHistory: (product: Product) => void }) {
   const headings: Record<View, string[]> = {
-    catalog: ["#", "User", "Date", "Name", "Quantity", "Purchase Price", "Sale Price", "Sale Price 2", "Expire", "Alert Qty", "Total Purchase", "Total Sale"],
+    catalog: ["#", "User", "Date", "Name", "Generic", "Manufacturer", "Quantity", "Purchase Price", "Sale USD", "Sale SLSh", "Expire", "Alert Qty", "Total Purchase", "Total Sale"],
     laboratory: ["#", "User", "Date", "Name", "Sale Price", "Sale Price 2"],
     services: ["Name", "Category", "Barcode", "Sale price"],
     "low-stock": ["Name", "Category", "Stock", "Reorder point", "Sale price"],
-    expiry: ["#", "Name", "Type", "Quantity", "Taariikhda Dhicitaanka", "Days Until Expiry", "Branch"],
-    inactive: ["Name", "Category", "Barcode", "Type", "Sale price", "Archived"],
+    expiry: ["#", "Name", "Batch", "Quantity", "Taariikhda Dhicitaanka", "Days Until Expiry", "Branch", "Supplier", "Status"],
+    inactive: ["Name", "Category", "Purchase Price", "Sale Price", "Quantity", "Expiry", "Archived By", "Archived Date"],
     history: ["Date", "Product", "Action", "Details"],
     duplicates: ["#", "User", "Date", "Name", "Quantity", "Purchase Price", "Sale Price", "Sale Price 2", "Expire", "Alert Qty", "Total Purchase", "Total Sale"],
   };
@@ -196,10 +211,12 @@ function ProductTable({ view, rows, loading, busyId, onEdit, onActiveChange, onH
   const toggleAll = () => setSelected(selected.length === expiryRows.length ? [] : expiryRows.map((row) => row.id));
   const toggleOne = (id: string) => setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   return <div className="product-data-table-wrap"><table className="product-data-table"><thead><tr>{view === "expiry" && <th><input type="checkbox" aria-label="Select all expiring products" checked={expiryRows.length > 0 && selected.length === expiryRows.length} onChange={toggleAll} /></th>}{columns.map((column) => <th key={column}>{column}</th>)}{["catalog","laboratory","services","inactive","duplicates"].includes(view) && <th>Action</th>}</tr></thead><tbody>{loading ? <tr><td colSpan={colSpan} className="product-table-empty">Loading…</td></tr> : rows.length === 0 ? <tr><td colSpan={colSpan} className="product-table-empty">No records found.</td></tr> : rows.map((row, index) => { const product = view === "history" ? row.product : row; const expiryDays = row.expiryDate ? Math.ceil((new Date(String(row.expiryDate)).getTime() - Date.now()) / 86400000) : null; const values: unknown[] = view === "history" ? [row.createdAt, row.product?.name ?? "—", row.action, row.details] : view === "expiry" ? [index + 1, row.product?.name ?? "—", row.product?.type === "LAB" ? "Lab" : "Item", row.quantity, row.expiryDate, expiryDays === null ? "—" : `${expiryDays} days`, row.product?.branch?.name ?? "—"] : view === "low-stock" ? [row.name, row.category, row.quantity, row.reorderPoint, row.salePrice] : view === "services" ? [row.name, row.category, row.barcode, row.salePrice] : view === "laboratory" ? [row.name, row.category, row.barcode, row.quantity, row.salePrice] : view === "inactive" ? [row.name, row.category, row.barcode, row.type, row.salePrice, row.updatedAt ?? row.createdAt] : [row.name, row.category, row.barcode, row.type, row.quantity, row.reorderPoint, row.salePrice, row.isActive ? "Active" : "Inactive"];
-    if (view === "catalog" || view === "duplicates") values.splice(0, values.length, index + 1, row.addedBy ?? "—", row.createdAt, row.name, row.quantity ?? 0, Number(row.costPrice ?? 0), Number(row.salePrice ?? 0), "—", row.expiryDate, row.reorderPoint, Number(row.totalPurchase ?? 0), Number(row.quantity ?? 0) * Number(row.salePrice ?? 0));
+    if (view === "catalog" || view === "duplicates") values.splice(0, values.length, index + 1, row.addedBy ?? "—", row.createdAt, row.name, row.genericName, row.manufacturer, row.quantity ?? 0, Number(row.costPrice ?? 0), Number(row.salePrice ?? 0), Number(row.salePrice2 ?? 0), row.expiryDate, row.reorderPoint, Number(row.totalPurchase ?? 0), Number(row.quantity ?? 0) * Number(row.salePrice ?? 0));
+    if (view === "expiry") values.splice(0, values.length, index + 1, row.product?.name ?? "—", row.batchNo ?? "—", row.quantity ?? 0, row.expiryDate, expiryDays === null ? "—" : `${expiryDays} days`, row.product?.branch?.name ?? "—", (row as Product & { supplier?: { name?: string } }).supplier?.name ?? "—", (row as Product & { classification?: string }).classification?.replaceAll("_", " ") ?? "—");
+    if (view === "inactive") values.splice(0, values.length, row.name, row.category, Number(row.costPrice ?? 0), Number(row.salePrice ?? 0), row.quantity ?? 0, row.expiryDate, row.archivedByName, row.archivedAt ?? row.updatedAt);
     if (view === "laboratory") values.splice(0, values.length, index + 1, row.addedBy ?? "—", row.createdAt, row.name, Number(row.salePrice ?? 0), "—");
     const stockClass = Number(row.quantity ?? 0) <= 0 ? "product-out-stock-row" : Number(row.quantity ?? 0) <= Number(row.reorderPoint ?? 0) ? "product-low-stock-row" : "";
-    return <tr key={row.id ?? `${row.product?.id}-${index}`} className={view === "catalog" || view === "laboratory" ? stockClass : undefined}>{view === "expiry" && <td><input type="checkbox" aria-label={`Select ${row.product?.name ?? "product"}`} checked={selected.includes(row.id)} onChange={() => toggleOne(row.id)} /></td>}{values.map((value, cellIndex) => <td key={cellIndex}>{((view === "catalog" || view === "duplicates") && [5,6,10,11].includes(cellIndex) || view === "laboratory" && cellIndex === 4) && typeof value === "number" ? formatMoney(value) : formatCell(value, columns[cellIndex])}</td>)}{product && ["catalog","laboratory","duplicates"].includes(view) && <td className="product-action-cell"><button className="product-history-action" onClick={() => void onHistory(product)}>History</button><button onClick={() => onEdit(product)}>Edit</button><button className="product-archive-action" disabled={busyId === product.id} onClick={() => void onActiveChange(product, false)}>{busyId === product.id ? "…" : "×"}</button><button className="product-transfer-action" type="button" disabled title="Stock transfer is not available for products yet">Transfer</button></td>}{product && view === "services" && <td className="product-action-cell"><button onClick={() => onEdit(product)}>Edit</button><button disabled={busyId === product.id} onClick={() => void onActiveChange(product, false)}>{busyId === product.id ? "Working…" : "Archive"}</button></td>}{product && view === "inactive" && <td className="product-action-cell"><button className="product-restore-action" disabled={busyId === product.id} onClick={() => void onActiveChange(product, true)}>{busyId === product.id ? "Restoring…" : "Restore"}</button></td>}</tr>;
+    return <tr key={row.id ?? `${row.product?.id}-${index}`} className={view === "expiry" && expiryDays !== null && expiryDays < 0 ? "product-expired-row" : view === "catalog" || view === "laboratory" ? stockClass : undefined}>{view === "expiry" && <td><input type="checkbox" aria-label={`Select ${row.product?.name ?? "product"}`} checked={selected.includes(row.id)} onChange={() => toggleOne(row.id)} /></td>}{values.map((value, cellIndex) => <td key={cellIndex}>{((view === "catalog" || view === "duplicates") && [7,8,9,12,13].includes(cellIndex) || view === "inactive" && [2,3].includes(cellIndex) || view === "laboratory" && cellIndex === 4) && typeof value === "number" ? formatMoney(value) : formatCell(value, columns[cellIndex])}</td>)}{product && ["catalog","laboratory","duplicates"].includes(view) && <td className="product-action-cell"><button className="product-history-action" onClick={() => void onHistory(product)}>History</button><button onClick={() => onEdit(product)}>Edit</button><button className="product-archive-action" disabled={busyId === product.id} onClick={() => void onActiveChange(product, false)}>{busyId === product.id ? "…" : "×"}</button><button className="product-transfer-action" type="button" disabled title="Stock transfer is not available for products yet">Transfer</button></td>}{product && view === "services" && <td className="product-action-cell"><button onClick={() => onEdit(product)}>Edit</button><button disabled={busyId === product.id} onClick={() => void onActiveChange(product, false)}>{busyId === product.id ? "Working…" : "Archive"}</button></td>}{product && view === "inactive" && <td className="product-action-cell"><button onClick={() => onEdit(product)}>Edit</button><button className="product-history-action" onClick={() => void onHistory(product)}>History</button><button className="product-restore-action" disabled={busyId === product.id} onClick={() => void onActiveChange(product, true)}>{busyId === product.id ? "Restoring…" : "Restore"}</button></td>}</tr>;
   })}</tbody></table></div>;
 }
 

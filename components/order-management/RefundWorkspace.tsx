@@ -45,7 +45,7 @@ export default function RefundWorkspace() {
   }
 
   return <div className="refund-page"><form className="refund-card" onSubmit={submit}>
-    <header className="refund-heading"><h1>Refund {branchName}</h1><span>{selectedSale ? `Sale · ${new Date(selectedSale.date).toLocaleDateString()}` : "Select a completed sale"}</span></header>
+    <header className="refund-heading"><h1>Patient Refund · {branchName}</h1><span>{selectedSale ? `Iibkii hore · ${new Date(selectedSale.date).toLocaleDateString()} · daawada la celiyey stock ayay ku noqonaysaa` : "Dooro iib hore oo bukaanka ah"}</span></header>
     <div className="refund-top-fields"><label className="refund-customer">Select Customer<select value={customer} onChange={(event) => chooseCustomer(event.target.value)}><option value="">Select Customer</option>{customers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="refund-date">Date<input type="date" value={new Date().toISOString().slice(0, 10)} readOnly /></label></div>
     <label className="refund-sale-select">Sale<select value={saleId} onChange={(event) => { setSaleId(event.target.value); setQuantities({}); }} disabled={!customerSales.length}><option value="">Select sale</option>{customerSales.map((sale) => <option key={sale.id} value={sale.id}>{new Date(sale.date).toLocaleString()} · {fmt(sale.total)} · Refundable {fmt(sale.refundableAmount)}</option>)}</select></label>
     <div className="refund-product-table"><div className="refund-table-head"><span>Product</span><span>Stock</span><span>Quantity</span><span>Price</span><span>Total</span><span><span className="refund-add" aria-hidden="true">＋</span></span></div>

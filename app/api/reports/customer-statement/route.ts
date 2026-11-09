@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const [sales, patients, users, branches] = await Promise.all([
     prisma.sale.findMany({
       where: { tenantId: session.tenantId, ...branchFilter, status: { not: "VOID" }, ...dateFilter, ...(patientId ? { patientId } : {}), ...(selectedUser ? { userId: selectedUser } : {}), ...(type ? { type } : {}) },
-      select: { id: true, patientId: true, userId: true, branchId: true, type: true, total: true, paidAmount: true, createdAt: true, patient: { select: { fullName: true } } },
+      select: { id: true, patientId: true, userId: true, branchId: true, type: true, total: true, paidAmount: true, createdAt: true, patient: { select: { fullName: true } }, creditNotes: { where: { kind: "RETURN" }, select: { amount: true } } },
       orderBy: { createdAt: "asc" },
       take: 5000,
     }),
@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
     const customerKey = sale.patientId || "walk-in";
     const total = Number(sale.total);
     const paid = Number(sale.paidAmount);
-    const due = Math.max(0, total - paid);
+    const credits = sale.creditNotes.reduce((sum, note) => sum + Number(note.amount), 0);
+    const due = Math.max(0, total - paid - credits);
     const currentBalance = (running.get(customerKey) || 0) + due;
     running.set(customerKey, currentBalance);
     return {
@@ -56,6 +57,7 @@ export async function GET(req: NextRequest) {
       type: sale.type || "New Order",
       income: total,
       paid,
+      creditNote: credits,
       balance: currentBalance,
     };
   }).filter(row => balance !== "due" || row.balance > 0).filter(row => balance !== "paid" || row.balance === 0);

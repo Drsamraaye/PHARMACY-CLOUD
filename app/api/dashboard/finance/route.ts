@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     prisma.moduleRecord.findMany({ where: { tenantId: session.tenantId, collection: "tickets", deletedAt: null, ...moduleBranch, createdAt: { gte: from, lte: to } } }),
     prisma.refund.findMany({ where: { tenantId: session.tenantId, sale: branch, createdAt: { gte: from, lte: to } }, select: { amount: true } }),
     prisma.productBatch.findMany({ where: { product: { tenantId: session.tenantId, isActive: true, ...branch } }, select: { quantity: true, costPrice: true, product: { select: { costPrice: true, salePrice: true } } } }),
-    prisma.sale.findMany({ where: { tenantId: session.tenantId, ...branch, status: { not: "VOID" }, patientId: { not: null } }, select: { total: true, paidAmount: true, patient: { select: { id: true, fullName: true, phone: true } } } }),
+    prisma.sale.findMany({ where: { tenantId: session.tenantId, ...branch, status: { not: "VOID" }, patientId: { not: null } }, select: { total: true, paidAmount: true, patient: { select: { id: true, fullName: true, phone: true } }, creditNotes: { where: { kind: "RETURN" }, select: { amount: true } } } }),
     prisma.purchase.findMany({ where: { tenantId: session.tenantId, ...branch }, select: { total: true, paidAmount: true, supplier: { select: { id: true, name: true, phone: true } } } }),
     prisma.moduleRecord.findMany({ where: { tenantId: session.tenantId, collection: "setup/accounts", deletedAt: null }, orderBy: { createdAt: "asc" }, take: 500 }),
   ]);
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const supplierPayments = sumRecords(filteredPayments, "amount"); const refundTotal = refunds.reduce((sum, row) => sum + Number(row.amount), 0);
   const stockValue = stock.reduce((sum, batch) => sum + batch.quantity * Number(batch.costPrice || batch.product.costPrice), 0); const stockAfterSale = stock.reduce((sum, batch) => sum + batch.quantity * Number(batch.product.salePrice), 0);
   const customers = new Map<string, { id: string; name: string; phone: string; balance: number }>();
-  for (const sale of customerSales) if (sale.patient && Number(sale.total) > Number(sale.paidAmount)) { const old = customers.get(sale.patient.id) ?? { id: sale.patient.id, name: sale.patient.fullName, phone: sale.patient.phone ?? "—", balance: 0 }; old.balance += Number(sale.total) - Number(sale.paidAmount); customers.set(sale.patient.id, old); }
+  for (const sale of customerSales) { const due = Math.max(0, Number(sale.total) - Number(sale.paidAmount) - sale.creditNotes.reduce((sum, note) => sum + Number(note.amount), 0)); if (sale.patient && due > 0) { const old = customers.get(sale.patient.id) ?? { id: sale.patient.id, name: sale.patient.fullName, phone: sale.patient.phone ?? "—", balance: 0 }; old.balance += due; customers.set(sale.patient.id, old); } }
   const suppliers = new Map<string, { id: string; name: string; phone: string; balance: number }>();
   for (const purchase of supplierPurchases) if (purchase.supplier && Number(purchase.total) > Number(purchase.paidAmount)) { const old = suppliers.get(purchase.supplier.id) ?? { id: purchase.supplier.id, name: purchase.supplier.name, phone: purchase.supplier.phone ?? "—", balance: 0 }; old.balance += Number(purchase.total) - Number(purchase.paidAmount); suppliers.set(purchase.supplier.id, old); }
   const totalCustomerBalance = [...customers.values()].reduce((sum, row) => sum + row.balance, 0); const totalSupplierBalance = [...suppliers.values()].reduce((sum, row) => sum + row.balance, 0);

@@ -34,7 +34,7 @@ export async function customersDue(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from"); const to = req.nextUrl.searchParams.get("to");
   const [patients, sales, users] = await Promise.all([
     prisma.patient.findMany({ where: { tenantId: session.tenantId, deletedAt: null, ...(session.branchId ? { branchId: session.branchId } : {}) }, select: { id: true, fullName: true, phone: true }, orderBy: { fullName: "asc" }, take: 1000 }),
-    prisma.sale.findMany({ where: { tenantId: session.tenantId, status: { not: "VOID" }, patientId: { not: null }, ...(session.branchId ? { branchId: session.branchId } : {}), ...(patientId ? { patientId } : {}), ...(from || to ? { createdAt: { ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}), ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}) } } : {}) }, include: { items: { include: { product: { select: { name: true } } } } }, orderBy: { createdAt: "asc" }, take: 3000 }),
+    prisma.sale.findMany({ where: { tenantId: session.tenantId, status: { not: "VOID" }, patientId: { not: null }, ...(session.branchId ? { branchId: session.branchId } : {}), ...(patientId ? { patientId } : {}), ...(from || to ? { createdAt: { ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}), ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}) } } : {}) }, include: { items: { include: { product: { select: { name: true } } } }, creditNotes: { where: { kind: "RETURN" }, select: { amount: true } } }, orderBy: { createdAt: "asc" }, take: 3000 }),
     prisma.userProfile.findMany({ where: { tenantId: session.tenantId }, select: { id: true, fullName: true } }),
   ]);
   const patientById = new Map(patients.map((patient) => [patient.id, patient]));
@@ -45,7 +45,8 @@ export async function customersDue(req: NextRequest) {
     grouped.set(sale.patientId, [...(grouped.get(sale.patientId) ?? []), sale]);
   }
   const data = [...grouped.entries()].map(([id, invoices]) => {
-    return { patient: patientById.get(id) ?? null, total: invoices.reduce((sum, invoice) => sum + Number(invoice.total), 0), paid: invoices.reduce((sum, invoice) => sum + Number(invoice.paidAmount), 0), balance: invoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.total) - Number(invoice.paidAmount)), 0), invoices: invoices.map((invoice) => ({ id: invoice.id, invoiceNo: invoice.id.slice(-6).toUpperCase(), date: invoice.createdAt, total: Number(invoice.total), paid: Number(invoice.paidAmount), balance: Math.max(0, Number(invoice.total) - Number(invoice.paidAmount)), user: userById.get(invoice.userId ?? "") ?? "—", method: invoice.paymentMethod || "—", items: invoice.items.map((item) => ({ name: item.product.name, quantity: item.quantity })) })) };
+    const invoiceDue = (invoice: typeof invoices[number]) => Math.max(0, Number(invoice.total) - Number(invoice.paidAmount) - invoice.creditNotes.reduce((sum, note) => sum + Number(note.amount), 0));
+    return { patient: patientById.get(id) ?? null, total: invoices.reduce((sum, invoice) => sum + Number(invoice.total), 0), paid: invoices.reduce((sum, invoice) => sum + Number(invoice.paidAmount), 0), balance: invoices.reduce((sum, invoice) => sum + invoiceDue(invoice), 0), invoices: invoices.map((invoice) => ({ id: invoice.id, invoiceNo: invoice.id.slice(-6).toUpperCase(), date: invoice.createdAt, total: Number(invoice.total), paid: Number(invoice.paidAmount), balance: invoiceDue(invoice), user: userById.get(invoice.userId ?? "") ?? "—", method: invoice.paymentMethod || "—", items: invoice.items.map((item) => ({ name: item.product.name, quantity: item.quantity })) })) };
   });
   return NextResponse.json({ data, options: { patients } });
 }

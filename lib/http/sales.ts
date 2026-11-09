@@ -25,5 +25,5 @@ export async function listSales(req: NextRequest, type: "PHARMACY" | "LAB" | "SE
 export async function postSale(req: NextRequest, type: "PHARMACY" | "LAB" | "SERVICE") {
   const session = await getSession(req); if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try { const sale = await createSale(session, type, await req.json()); return NextResponse.json({ data: visibleSale(sale, session.role === "PHARMACIST") }, { status: 201 }); }
-  catch (error) { const message = error instanceof Error ? error.message : "Sale could not be created"; return NextResponse.json({ error: message }, { status: /not found|unavailable|exceed|insufficient|invalid|stock/i.test(message) ? 400 : 500 }); }
+  catch (error) { const message = error instanceof Error ? error.message : "Sale could not be created"; const code = typeof error === "object" && error !== null && "code" in error ? error.code : null; return NextResponse.json({ error: code === "P2034" ? "Transactions changed while closing the business day. Retry the sale." : message }, { status: code === "P2034" ? 409 : /not found|unavailable|exceed|insufficient|invalid|stock|exchange rate|closed|select a customer/i.test(message) ? 400 : 500 }); }
 }

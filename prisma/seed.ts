@@ -5,16 +5,15 @@ import { hashPassword } from "../lib/password";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
+// Platform super-admin credentials. Keep these in sync with the intended login.
+const SUPER_ADMIN_EMAIL = "guiledpro@gmail.com";
+const SUPER_ADMIN_PASSWORD = "12345";
+const SUPER_ADMIN_NAME = "PharmaCloud Super Admin";
 
 async function main() {
-  const email = requiredEnv("SUPER_ADMIN_EMAIL").toLowerCase();
-  const password = requiredEnv("SUPER_ADMIN_PASSWORD");
-  const fullName = process.env.SUPER_ADMIN_NAME?.trim() || "PharmaCloud Super Admin";
+  const email = SUPER_ADMIN_EMAIL.toLowerCase();
+  const password = SUPER_ADMIN_PASSWORD;
+  const fullName = SUPER_ADMIN_NAME;
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("SUPER_ADMIN_EMAIL must be a valid email address");

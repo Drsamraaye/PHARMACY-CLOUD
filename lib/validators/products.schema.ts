@@ -6,11 +6,16 @@ const optionalText = z.preprocess((value) => typeof value === "string" && value.
 /** Validates catalog creation, including optional opening stock and its expiry date. */
 export const createProductSchema = z.object({
   name: z.string().trim().min(1, "Product name is required").max(160),
+  genericName: optionalText,
   category: optionalText,
+  manufacturer: optionalText,
   barcode: optionalText,
   type: z.enum(["PHARMACY", "LAB", "SERVICE"]).default("PHARMACY"),
   reorderPoint: z.coerce.number().int().finite().min(0).default(0),
   salePrice: nonNegativeAmount.default(0),
+  salePrice2: nonNegativeAmount.default(0),
+  salePriceCurrency: z.enum(["USD", "SLSH"]).default("USD"),
+  salePrice2Currency: z.enum(["USD", "SLSH"]).default("SLSH"),
   costPrice: nonNegativeAmount.default(0),
   quantity: z.coerce.number().int().finite().min(0).default(0),
   expiryDate: z.string().optional().refine((value) => !value || !Number.isNaN(Date.parse(value)), "Expiry date is invalid"),
@@ -19,11 +24,16 @@ export const createProductSchema = z.object({
 /** Validates partial catalog edits and archive/reactivate requests. */
 export const updateProductSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
+  genericName: z.string().trim().max(160).nullable().optional(),
   category: z.string().trim().max(160).nullable().optional(),
+  manufacturer: z.string().trim().max(160).nullable().optional(),
   barcode: z.string().trim().max(160).nullable().optional(),
   type: z.enum(["PHARMACY", "LAB", "SERVICE"]).optional(),
   reorderPoint: z.coerce.number().int().finite().min(0).optional(),
   salePrice: nonNegativeAmount.optional(),
+  salePrice2: nonNegativeAmount.optional(),
+  salePriceCurrency: z.enum(["USD", "SLSH"]).optional(),
+  salePrice2Currency: z.enum(["USD", "SLSH"]).optional(),
   costPrice: nonNegativeAmount.optional(),
   isActive: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "Provide at least one product field to update");

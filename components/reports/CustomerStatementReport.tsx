@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Row = { id: string; date: string; patient: string; user: string; branch: string; type: string; income: number; paid: number; balance: number };
+type Row = { id: string; date: string; patient: string; user: string; branch: string; type: string; income: number; paid: number; creditNote: number; balance: number };
 type Option = { id: string; fullName?: string; name?: string };
 const dateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const amount = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -57,8 +57,8 @@ export default function CustomerStatementReport() {
     </div>
     <div className="customer-statement-actions"><button type="button" onClick={() => void load()} disabled={loading}>{loading ? "Loading…" : "Search"}</button><button type="button" onClick={() => window.print()}>Print</button></div>
     {error && <p className="customer-statement-error" role="alert">{error}</p>}
-    <div className="customer-statement-table-wrap"><table><thead><tr><th>Date</th><th>Name</th><th>User</th><th>Branch</th><th>Type</th><th>In</th><th>Out</th><th>Balance</th></tr></thead><tbody>
-      {loading ? <tr><td colSpan={8} className="customer-statement-empty">Loading…</td></tr> : rows.length ? rows.map(row => <tr key={row.id}><td>{dateLabel(row.date)}</td><td>{row.patient}</td><td>{row.user}</td><td>{row.branch}</td><td>{row.type}</td><td><span className="customer-statement-amount">{amount(row.income)}</span></td><td><span className="customer-statement-amount">{amount(row.paid)}</span></td><td>{amount(row.balance)}</td></tr>) : <tr><td colSpan={8} className="customer-statement-empty">No customer statement records found.</td></tr>}
+    <div className="customer-statement-table-wrap"><table><thead><tr><th>Date</th><th>Name</th><th>User</th><th>Branch</th><th>Type</th><th>In</th><th>Out</th><th>Credit Note</th><th>Balance</th></tr></thead><tbody>
+      {loading ? <tr><td colSpan={9} className="customer-statement-empty">Loading…</td></tr> : rows.length ? rows.map(row => <tr key={row.id}><td>{dateLabel(row.date)}</td><td>{row.patient}</td><td>{row.user}</td><td>{row.branch}</td><td>{row.type}</td><td><span className="customer-statement-amount">{amount(row.income)}</span></td><td><span className="customer-statement-amount">{amount(row.paid)}</span></td><td>{amount(row.creditNote)}</td><td>{amount(row.balance)}</td></tr>) : <tr><td colSpan={9} className="customer-statement-empty">No customer statement records found.</td></tr>}
     </tbody></table></div>
   </section></main>;
 }
